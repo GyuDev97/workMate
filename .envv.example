@@ -1,0 +1,17 @@
+# Frontend / Electron
+VITE_BACKEND_URL=http://127.0.0.1:8765
+WORKMATE_BACKEND_URL=http://127.0.0.1:8765
+# Set to 1 only when renderer DevTools should open automatically in development.
+WORKMATE_OPEN_DEVTOOLS=0
+# Set an explicit Python executable if python3 is not on PATH.
+# Example on this development machine: /Users/bizntech/Desktop/python/.venv/bin/python
+# WORKMATE_PYTHON=python3
+
+# Backend provider selection. Mock works without any credentials.
+WORKMATE_LLM_PROVIDER=mock
+OPENAI_API_KEY=
+WORKMATE_LLM_MODEL=gpt-4.1-mini
+WORKMATE_MAIL_PROVIDER=mock
+WORKMATE_CALENDAR_PROVIDER=mock
+WORKMATE_MEMORY_PROVIDER=mock
+WORKMATE_DATABASE_URL=sqlite:///./data/workmate.db

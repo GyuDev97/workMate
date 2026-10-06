@@ -1,0 +1,1 @@
+"""workMate FastAPI application package."""
