@@ -29,6 +29,9 @@ class ToolRisk(str, Enum):
 class ApprovalStatus(str, Enum):
     NOT_REQUIRED = "not_required"
     PENDING_APPROVAL = "pending_approval"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class Event(BaseModel):
@@ -36,7 +39,28 @@ class Event(BaseModel):
     title: str
     starts_at: datetime
     ends_at: datetime | None = None
+    description: str = ""
+    all_day: bool = False
+    location: str = ""
+    calendar_id: str = "primary"
     source: str = "mock"
+
+
+class CalendarEventDraft(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    starts_at: datetime
+    ends_at: datetime | None = None
+    description: str = ""
+    all_day: bool = False
+    location: str = ""
+    calendar_id: str = "primary"
+
+
+class CalendarConnectionStatus(BaseModel):
+    provider: Literal["mock", "google"]
+    state: Literal["connected", "mock", "offline"]
+    detail: str
+    calendar_id: str = "primary"
 
 
 class MailSummary(BaseModel):
@@ -105,11 +129,17 @@ class ChatRequest(BaseModel):
 
 
 class ActionCard(BaseModel):
-    kind: Literal["mail_draft", "calendar_event", "task"]
+    action_id: str | None = None
+    kind: Literal["mail_draft", "calendar_event", "calendar_update", "calendar_delete", "task"]
     title: str
     fields: dict[str, str]
     requires_confirmation: bool = True
     status: ApprovalStatus = ApprovalStatus.PENDING_APPROVAL
+
+
+class ActionExecutionResult(BaseModel):
+    action: ActionCard
+    message: str
 
 
 class ToolTrace(BaseModel):

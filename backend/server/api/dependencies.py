@@ -12,6 +12,9 @@ from server.tools.mail import MailTool
 from server.tools.memory import MemoryTool
 from server.providers.llm.mock import MockLLMProvider
 from server.providers.llm.openai_provider import OpenAIProvider
+from server.providers.calendar.google import GoogleCalendarProvider
+from server.providers.calendar.mock import MockCalendarProvider
+from server.services.calendar_actions import CalendarActionService
 
 
 @lru_cache
@@ -25,13 +28,31 @@ def activity_service() -> ActivityService:
 
 
 @lru_cache
+def calendar_provider():
+    requested = os.getenv("WORKMATE_CALENDAR_PROVIDER", "mock").lower()
+    if requested == "google":
+        return GoogleCalendarProvider()
+    return MockCalendarProvider()
+
+
+@lru_cache
+def calendar_tool() -> CalendarTool:
+    return CalendarTool(calendar_provider())
+
+
+@lru_cache
+def calendar_action_service() -> CalendarActionService:
+    return CalendarActionService(calendar_tool(), activity_service())
+
+
+@lru_cache
 def dashboard_service() -> DashboardService:
-    return DashboardService(task_service(), CalendarTool(), MailTool(), activity_service())
+    return DashboardService(task_service(), calendar_tool(), MailTool(), activity_service())
 
 
 @lru_cache
 def tool_registry() -> ToolRegistry:
-    return ToolRegistry(task_service(), CalendarTool(), MailTool(), MemoryTool())
+    return ToolRegistry(task_service(), calendar_tool(), MailTool(), MemoryTool(), calendar_action_service())
 
 
 @lru_cache

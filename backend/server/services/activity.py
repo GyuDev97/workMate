@@ -14,5 +14,9 @@ class ActivityService:
         label = "완료" if trace.success else "실패"
         self._items.appendleft(Activity(id=str(uuid4()), occurred_at=datetime.now().astimezone(), action=f"{trace.tool} {label}", detail=f"{trace.risk.value} · {trace.duration_ms}ms", category="read" if trace.risk.value == "READ" else "create"))
 
+    def record(self, action: str, detail: str, category: str = "system") -> None:
+        safe_category = category if category in {"read", "create", "system", "reminder"} else "system"
+        self._items.appendleft(Activity(id=str(uuid4()), occurred_at=datetime.now().astimezone(), action=action, detail=detail, category=safe_category))
+
     def recent(self) -> list[Activity]:
         return list(self._items)

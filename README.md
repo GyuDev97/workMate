@@ -164,7 +164,42 @@ The provider uses the OpenAI Python SDK's Responses API with function definition
 
 In Electron development mode, the terminal prints safe execution events (provider, model, selected tools, success/failure, elapsed time). It never prints API keys, user text, prompts, tool output, or mail bodies. Set `WORKMATE_AGENT_DEBUG=1` to retain these events outside development mode.
 
-For Google Calendar next, supply OAuth desktop-client credentials, approved redirect flow, scopes, selected calendar IDs, encrypted token storage policy, and an implementation for the existing proposal/approval boundary before enabling create/update/delete calls.
+## V0.3 Google Calendar
+
+Calendar is now a swappable provider, selected in `.env`:
+
+```dotenv
+WORKMATE_CALENDAR_PROVIDER=mock # safe default
+# WORKMATE_CALENDAR_PROVIDER=google
+WORKMATE_TIMEZONE=Asia/Seoul
+GOOGLE_CALENDAR_ID=primary
+# GOOGLE_CALENDAR_CREDENTIALS_PATH=/absolute/path/to/google-oauth-desktop-client.json
+# GOOGLE_CALENDAR_TOKEN_PATH=data/google_calendar_token.json
+```
+
+`MockCalendarProvider` preserves the offline demo. `GoogleCalendarProvider` uses the Google Calendar v3 client and the OAuth Desktop Application local-server authorization flow. It requests only `https://www.googleapis.com/auth/calendar.events`, which supports the event read/search/create/update/delete actions this app provides; it does not request broad Drive, Mail, or profile scopes.
+
+### Google Cloud setup and first connection
+
+1. In Google Cloud Console, enable **Google Calendar API** for the selected project.
+2. Configure the OAuth consent screen, then create an OAuth client with application type **Desktop app**.
+3. Download its JSON outside this repository and set its absolute path as `GOOGLE_CALENDAR_CREDENTIALS_PATH` in the root `.env`.
+4. Set `WORKMATE_CALENDAR_PROVIDER=google`, restart workMate, then open **설정 → Google Calendar → Google 계정 연결**.
+5. The system browser opens for sign-in and consent. After the localhost callback completes, workMate stores a refreshable token and the Dashboard uses the selected Google calendar.
+
+The provider sends `singleEvents=true` on list/search calls, so recurring-event occurrences are returned as individual events. Google `dateTime` and all-day `date` event fields are normalized to workMate `Event` objects with `starts_at`, `ends_at`, `all_day`, `description`, `location`, `calendar_id`, and `source`. All date boundaries and event display use `Asia/Seoul` by default.
+
+Calendar changes remain approval gated: the Agent only creates an Action Card; the renderer calls the approval endpoint only when the user presses **등록** (or **삭제**). The backend records `pending_approval → executing → completed/failed` and protects each in-memory action with a lock so a second click cannot create the same event twice. Read failures leave Task and Mail available instead of taking down the dashboard.
+
+### Token security and disconnect behavior
+
+V0.3 defines an `OAuthTokenStore` boundary. Its current `FileTokenStore` writes the refresh-token JSON to `backend/data/google_calendar_token.json` with user-only `0600` permissions; the file and OAuth client JSON names are ignored by Git. This is suitable for local development but not the final production vault: a packaged desktop build should provide a Keychain/Credential Manager implementation behind the same interface.
+
+**연결 해제** deletes this device's local token only. It does not revoke the Google OAuth grant. Revoking the grant is a separate Google-account security action (or can be added as an explicit, clearly labelled future option), because it invalidates the grant rather than merely signing this desktop app out.
+
+### Manual real-account verification
+
+After connection, create `workMate 테스트` for today at 15:00 in Google Calendar (or Samsung Calendar synchronized with the same Google account), then ask `오늘 일정 알려줘.` Confirm it appears in Home and Assistant. Next ask `내일 오후 2시에 workMate 테스트 회의 등록해.`, approve the card, and verify the new event syncs back to Samsung Calendar. Finally ask the Assistant to find the event before proposing a time change or deletion; those changes must likewise remain pending until approval.
 
 ## Quality checks
 

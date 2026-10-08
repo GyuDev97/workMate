@@ -1,14 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ActionCard, ChatResponse, Dashboard, Task } from './types'
+import type { ActionCard, CalendarConnectionStatus, ChatResponse, Dashboard, Task } from './types'
 
-type Page = 'home' | 'assistant' | 'tasks' | 'activity'
+type Page = 'home' | 'assistant' | 'tasks' | 'activity' | 'settings'
 const nav: { id: Page; icon: string; label: string }[] = [
   { id: 'home', icon: '⌂', label: '홈' }, { id: 'assistant', icon: '✦', label: 'Assistant' },
   { id: 'tasks', icon: '✓', label: '업무' }, { id: 'activity', icon: '◷', label: '활동 기록' }
 ]
 
-function fmtTime(value: string) { return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)) }
+function fmtTime(value: string) { return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }).format(new Date(value)) }
 function fmtDate(value?: string) { return value ? new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' }).format(new Date(value)) : '기한 없음' }
 
 function Logo() { return <div className="brand-mark"><span>✦</span></div> }
@@ -44,14 +44,47 @@ function Home({ data, move }: { data: Dashboard; move: (page: Page) => void }) {
 
 function ProviderPanel({ providers }: { providers: Dashboard['providers'] }) { return <article className="panel provider-panel"><div className="panel-head"><div><h2>시스템 상태</h2><p>연결 상태를 한눈에 확인합니다.</p></div></div>{providers.map((provider) => <div className="provider-row" key={provider.name}><span><StatusDot state={provider.state} />{provider.name}</span><small>{provider.detail}</small></div>)}</article> }
 
-function ActionPreview({ action }: { action: ActionCard }) { return <div className="action-card"><div className="action-heading"><span>{action.kind === 'mail_draft' ? '✉' : '▣'}</span><div><b>{action.title}</b><small>실행 전 검토가 필요합니다.</small></div></div>{Object.entries(action.fields).map(([label, value]) => <div className="action-field" key={label}><small>{label}</small><p>{value}</p></div>)}<div className="action-buttons"><button className="secondary">수정</button><button className="primary" disabled>{action.kind === 'mail_draft' ? '검토 후 보내기' : '검토 후 실행'}</button></div></div> }
+function ActionPreview({ action, onApprove, busy }: { action: ActionCard; onApprove: (action: ActionCard) => void; busy: boolean }) {
+  const calendarAction = action.kind.startsWith('calendar_') && action.action_id
+  const pending = action.status === 'pending_approval'
+  const label = action.status === 'completed' ? '완료됨' : action.status === 'failed' ? '실패' : action.status === 'executing' ? '실행 중…' : action.kind === 'calendar_delete' ? '삭제' : '등록'
+  return <div className="action-card"><div className="action-heading"><span>{action.kind === 'mail_draft' ? '✉' : '▣'}</span><div><b>{action.title}</b><small>{pending ? '실행 전 검토가 필요합니다.' : `상태: ${label}`}</small></div></div>{Object.entries(action.fields).map(([field, value]) => <div className="action-field" key={field}><small>{field}</small><p>{value}</p></div>)}<div className="action-buttons"><button className="secondary" disabled={!pending || busy}>취소</button><button className="primary" disabled={!calendarAction || !pending || busy} onClick={() => calendarAction && onApprove(action)}>{busy ? '실행 중…' : calendarAction ? label : '검토 후 보내기'}</button></div></div>
+}
 
-function Assistant({ data }: { data: Dashboard }) {
+function Assistant({ data, refresh }: { data: Dashboard; refresh: () => Promise<void> }) {
   const [messages, setMessages] = useState<{ role: 'assistant' | 'user'; text: string; action?: ActionCard; sources?: string[]; trace?: ChatResponse['trace'] }[]>([{ role: 'assistant', text: '안녕하세요. 오늘의 일정과 중요 메일을 확인해 두었어요. 무엇을 도와드릴까요?' }])
-  const [input, setInput] = useState(''); const [loading, setLoading] = useState(false)
+  const [input, setInput] = useState(''); const [loading, setLoading] = useState(false); const [approving, setApproving] = useState<string | null>(null)
   async function submit(event: FormEvent) { event.preventDefault(); const message = input.trim(); if (!message || loading) return; setInput(''); setMessages((current) => [...current, { role: 'user', text: message }]); setLoading(true); try { const response: ChatResponse = await api.chat(message); setMessages((current) => [...current, { role: 'assistant', text: response.message, action: response.action, sources: response.sources, trace: response.trace }]) } catch (error) { setMessages((current) => [...current, { role: 'assistant', text: error instanceof Error ? `연결 오류: ${error.message}` : '요청을 처리하지 못했습니다.' }]) } finally { setLoading(false) } }
+  async function approve(action: ActionCard) {
+    if (!action.action_id || approving) return
+    setApproving(action.action_id)
+    try {
+      const result = await api.approveAction(action.action_id)
+      setMessages((current) => [...current.map((message) => message.action?.action_id === action.action_id ? { ...message, action: result.action } : message), { role: 'assistant', text: result.message }])
+      await refresh()
+    } finally { setApproving(null) }
+  }
   const prompts = ['오늘 뭐 해야 돼?', '중요 메일 알려줘', '김대리에게 답장 써줘', '내일 일정 알려줘']
-  return <><PageHeader title="Assistant" text="말로 요청하면 상황을 확인하고 필요한 작업을 준비합니다." /><section className="assistant-layout"><article className="panel conversation"><div className="conversation-head"><span><Logo /></span><div><b>workMate Assistant</b><small><StatusDot state="connected" />준비됨 · Tool Calling</small></div></div><div className="messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><div className="bubble">{message.text.split('\n').map((line, lineIndex) => <p key={lineIndex}>{line || <br />}</p>)}{message.action && <ActionPreview action={message.action} />}{message.trace?.length ? <small className="sources">{message.trace.map((trace) => `${trace.success ? '✓' : '!' } ${trace.tool}`).join(' · ')}</small> : null}{message.sources?.length ? <small className="sources">참조: {message.sources.join(' · ')}</small> : null}</div></div>)}{loading && <div className="message assistant"><div className="bubble typing"><i /><i /><i /></div></div>}</div><form className="composer" onSubmit={submit}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="workMate에게 요청하세요…" /><button className="send" type="submit" disabled={loading}>↑</button></form></article><aside className="assistant-side"><article className="panel compact"><h2>빠른 질문</h2><p>자주 쓰는 요청으로 바로 시작하세요.</p><div className="prompt-list">{prompts.map((prompt) => <button key={prompt} onClick={() => setInput(prompt)}>{prompt}<span>→</span></button>)}</div></article><article className="panel compact next-event"><p className="eyebrow">NEXT UP</p><h3>{data.events[0]?.title ?? '예정된 일정 없음'}</h3><b>{data.events[0] ? fmtTime(data.events[0].starts_at) : ''}</b><small>캘린더 Mock 데이터 기준</small></article></aside></section></>
+  const next = data.events.find((event) => new Date(event.starts_at).getTime() >= Date.now())
+  return <><PageHeader title="Assistant" text="말로 요청하면 상황을 확인하고 필요한 작업을 준비합니다." /><section className="assistant-layout"><article className="panel conversation"><div className="conversation-head"><span><Logo /></span><div><b>workMate Assistant</b><small><StatusDot state="connected" />준비됨 · Tool Calling</small></div></div><div className="messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><div className="bubble">{message.text.split('\n').map((line, lineIndex) => <p key={lineIndex}>{line || <br />}</p>)}{message.action && <ActionPreview action={message.action} onApprove={(current) => void approve(current)} busy={approving === message.action.action_id} />}{message.trace?.length ? <small className="sources">{message.trace.map((trace) => `${trace.success ? '✓' : '!' } ${trace.tool}`).join(' · ')}</small> : null}{message.sources?.length ? <small className="sources">참조: {message.sources.join(' · ')}</small> : null}</div></div>)}{loading && <div className="message assistant"><div className="bubble typing"><i /><i /><i /></div></div>}</div><form className="composer" onSubmit={submit}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="workMate에게 요청하세요…" /><button className="send" type="submit" disabled={loading}>↑</button></form></article><aside className="assistant-side"><article className="panel compact"><h2>빠른 질문</h2><p>자주 쓰는 요청으로 바로 시작하세요.</p><div className="prompt-list">{prompts.map((prompt) => <button key={prompt} onClick={() => setInput(prompt)}>{prompt}<span>→</span></button>)}</div></article><article className="panel compact next-event"><p className="eyebrow">NEXT UP</p><h3>{next?.title ?? '다음 일정이 없습니다.'}</h3><b>{next ? fmtTime(next.starts_at) : ''}</b><small>{next ? 'Calendar Provider 기준' : '예정된 일정 없음'}</small></article></aside></section></>
+}
+
+function Settings({ refresh }: { refresh: () => Promise<void> }) {
+  const [status, setStatus] = useState<CalendarConnectionStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [notice, setNotice] = useState('')
+  useEffect(() => { void api.calendarStatus().then(setStatus).catch(() => setNotice('연결 상태를 확인하지 못했습니다.')) }, [])
+  async function run(action: 'connect' | 'verify' | 'disconnect') {
+    setLoading(true); setNotice('')
+    try {
+      const result = action === 'connect' ? await api.connectCalendar() : action === 'verify' ? await api.verifyCalendar() : await api.disconnectCalendar()
+      setStatus(result)
+      setNotice(action === 'connect' ? 'Google Calendar 연결을 완료했습니다.' : action === 'verify' ? '연결을 확인했습니다.' : '이 기기의 연결 토큰을 제거했습니다.')
+      await refresh()
+    } catch (error) { setNotice(error instanceof Error ? error.message : '요청을 처리하지 못했습니다.') } finally { setLoading(false) }
+  }
+  const connected = status?.state === 'connected'
+  return <><PageHeader title="설정" text="Google Calendar 연결과 권한 상태를 관리합니다." /><section className="settings-layout"><article className="panel settings-panel"><div className="panel-head"><div><h2>Google Calendar</h2><p>일정 조회와 승인된 일정 변경에 사용됩니다.</p></div><StatusDot state={status?.state ?? 'offline'} /></div><div className="connection-status"><b>{connected ? '연결됨' : status?.state === 'mock' ? 'Mock 모드' : '연결되지 않음'}</b><small>{status?.detail ?? '상태를 불러오는 중입니다.'}</small><small>Calendar ID: {status?.calendar_id ?? 'primary'}</small></div><div className="action-buttons settings-actions">{connected ? <><button className="secondary" disabled={loading} onClick={() => void run('verify')}>연결 확인</button><button className="primary danger" disabled={loading} onClick={() => void run('disconnect')}>연결 해제</button></> : <button className="primary" disabled={loading || status?.provider === 'mock'} onClick={() => void run('connect')}>{loading ? '브라우저 인증 대기 중…' : 'Google 계정 연결'}</button>}</div>{status?.provider === 'mock' && <p className="settings-hint">`.env`에서 `WORKMATE_CALENDAR_PROVIDER=google`으로 바꾸고 OAuth Desktop Client JSON 경로를 설정하면 실제 계정을 연결할 수 있습니다.</p>}{notice && <p className="settings-notice">{notice}</p>}</article></section></>
 }
 
 function Tasks({ tasks, refresh }: { tasks: Task[]; refresh: () => Promise<void> }) {
@@ -78,8 +111,8 @@ export default function App() {
     void load()
     window.workMate?.onNavigate((next) => setPage(next as Page))
   }, [])
-  const content = useMemo(() => { if (!data) return null; if (page === 'assistant') return <Assistant data={data} />; if (page === 'tasks') return <Tasks tasks={data.tasks} refresh={load} />; if (page === 'activity') return <Activity activities={data.activities} />; return <Home data={data} move={setPage} /> }, [data, page])
+  const content = useMemo(() => { if (!data) return null; if (page === 'assistant') return <Assistant data={data} refresh={load} />; if (page === 'tasks') return <Tasks tasks={data.tasks} refresh={load} />; if (page === 'activity') return <Activity activities={data.activities} />; if (page === 'settings') return <Settings refresh={load} />; return <Home data={data} move={setPage} /> }, [data, page])
   if (offline) return <Offline retry={() => void load()} />
   if (!data) return <div className="loading"><Logo /><span>workMate를 준비하는 중…</span></div>
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><Logo /><div><b>workMate</b><small>개인 AI 업무 비서</small></div></div><nav>{nav.map((item) => <button className={page === item.id ? 'active' : ''} onClick={() => setPage(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><span>⌘</span><p><b>안전한 업무 처리</b><small>변경 작업은 항상 확인 후 실행</small></p></div><button className="settings">⚙ 설정 <span>›</span></button></div></aside><main className="main-content">{content}</main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><Logo /><div><b>workMate</b><small>개인 AI 업무 비서</small></div></div><nav>{nav.map((item) => <button className={page === item.id ? 'active' : ''} onClick={() => setPage(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><div className="privacy"><span>⌘</span><p><b>안전한 업무 처리</b><small>변경 작업은 항상 확인 후 실행</small></p></div><button className={`settings ${page === 'settings' ? 'active' : ''}`} onClick={() => setPage('settings')}>⚙ 설정 <span>›</span></button></div></aside><main className="main-content">{content}</main></div>
 }

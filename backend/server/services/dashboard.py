@@ -16,7 +16,11 @@ class DashboardService:
         self.activity = activity
 
     def get_dashboard(self) -> Dashboard:
-        events = self.calendar.today_events()
+        try:
+            events = self.calendar.today_events()
+        except Exception:
+            # Calendar failures degrade to the remaining local providers; the UI stays usable.
+            events = []
         mails = self.mail.important_mail()
         tasks = self.tasks.list_tasks()
         open_tasks = [task for task in tasks if task.status.value != "DONE"]
@@ -32,7 +36,7 @@ class DashboardService:
             providers=[
                 ProviderStatus(name="LLM", state="connected" if os.getenv("WORKMATE_LLM_PROVIDER") == "openai" and os.getenv("OPENAI_API_KEY") else "mock", detail="OpenAI Responses API" if os.getenv("WORKMATE_LLM_PROVIDER") == "openai" and os.getenv("OPENAI_API_KEY") else "Mock provider (set OPENAI_API_KEY to enable OpenAI)"),
                 ProviderStatus(name="Mail", state="mock", detail="Bizmeka mock"),
-                ProviderStatus(name="Calendar", state="mock", detail="Google Calendar mock"),
+                ProviderStatus(**self.calendar.provider.status().model_dump(exclude={"provider", "calendar_id"}), name="Calendar"),
                 ProviderStatus(name="Memory", state="offline", detail="WorkMemory 연결 대기"),
             ],
             activities=(self.activity.recent() if self.activity and self.activity.recent() else [

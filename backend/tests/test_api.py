@@ -1,10 +1,14 @@
 from fastapi.testclient import TestClient
 import pytest
 from types import SimpleNamespace
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from server.api import dependencies
 from server.agent.agent import WorkMateAgent
 from server.providers.llm.openai_provider import OpenAIProvider
+from server.providers.calendar.google import GoogleCalendarProvider
+from server.providers.calendar.token_store import FileTokenStore
 from server.main import app
 
 client = TestClient(app)
@@ -17,6 +21,9 @@ def isolate_task_database(tmp_path, monkeypatch):
     dependencies.task_service.cache_clear()
     dependencies.dashboard_service.cache_clear()
     dependencies.activity_service.cache_clear()
+    dependencies.calendar_action_service.cache_clear()
+    dependencies.calendar_tool.cache_clear()
+    dependencies.calendar_provider.cache_clear()
     dependencies.tool_registry.cache_clear()
     dependencies.llm_provider.cache_clear()
     dependencies.agent.cache_clear()
@@ -24,6 +31,9 @@ def isolate_task_database(tmp_path, monkeypatch):
     dependencies.task_service.cache_clear()
     dependencies.dashboard_service.cache_clear()
     dependencies.activity_service.cache_clear()
+    dependencies.calendar_action_service.cache_clear()
+    dependencies.calendar_tool.cache_clear()
+    dependencies.calendar_provider.cache_clear()
     dependencies.tool_registry.cache_clear()
     dependencies.llm_provider.cache_clear()
     dependencies.agent.cache_clear()
@@ -100,3 +110,38 @@ def test_task_lifecycle() -> None:
     completed = client.post(f"/api/v1/tasks/{created.json()['id']}/complete")
     assert completed.status_code == 200
     assert completed.json()["status"] == "DONE"
+
+
+def test_calendar_action_approval_and_duplicate_prevention() -> None:
+    proposal = client.post("/api/v1/chat", json={"message": "금요일 오후 2시에 회의 등록해."}).json()["action"]
+    assert proposal["status"] == "pending_approval"
+    action_id = proposal["action_id"]
+    completed = client.post(f"/api/v1/actions/{action_id}/approve")
+    assert completed.status_code == 200
+    assert completed.json()["action"]["status"] == "completed"
+    repeated = client.post(f"/api/v1/actions/{action_id}/approve")
+    assert repeated.json()["message"] == "이 작업은 이미 완료되었습니다."
+
+
+def test_calendar_update_and_delete_proposals_are_approval_gated() -> None:
+    actions = dependencies.calendar_action_service()
+    starts_at = datetime(2026, 10, 9, 14, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+    update = actions.propose_update("event-1", "AI PoC 회의", "금요일", "15:00")
+    deletion = actions.propose_delete("event-1", "AI PoC 회의", starts_at)
+    assert update.kind == "calendar_update" and update.status.value == "pending_approval"
+    assert deletion.kind == "calendar_delete" and deletion.status.value == "pending_approval"
+
+
+def test_google_calendar_normalizes_timed_and_all_day_events() -> None:
+    timezone = ZoneInfo("Asia/Seoul")
+    timed = GoogleCalendarProvider.normalize({"id": "timed", "summary": "회의", "start": {"dateTime": "2026-10-09T14:00:00+09:00"}, "end": {"dateTime": "2026-10-09T15:00:00+09:00"}}, "primary", timezone)
+    all_day = GoogleCalendarProvider.normalize({"id": "day", "summary": "연차", "start": {"date": "2026-10-10"}, "end": {"date": "2026-10-11"}}, "primary", timezone)
+    assert timed.starts_at.hour == 14 and timed.all_day is False
+    assert all_day.starts_at == datetime(2026, 10, 10, tzinfo=timezone) and all_day.all_day is True
+
+
+def test_google_calendar_without_oauth_configuration_stays_offline(tmp_path) -> None:
+    provider = GoogleCalendarProvider(credentials_path=str(tmp_path / "missing.json"), token_store=FileTokenStore(tmp_path / "token.json"))
+    assert provider.status().state == "offline"
+    with pytest.raises(Exception, match="Google Calendar 계정을 먼저 연결"):
+        provider.today_events()

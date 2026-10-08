@@ -1,27 +1,31 @@
-from datetime import datetime, timedelta, timezone
-
-from server.models.schemas import Event
+from server.models.schemas import CalendarEventDraft, Event
+from server.providers.calendar.base import CalendarProvider
 
 
 class CalendarTool:
     name = "calendar"
-    description = "Read and create calendar events. V0.1 uses mock Google Calendar data."
+    description = "Read and create calendar events through the selected calendar provider."
+
+    def __init__(self, provider: CalendarProvider) -> None:
+        self.provider = provider
 
     def today_events(self) -> list[Event]:
-        # Mock times represent the user's local workday, not UTC timestamps.
-        today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-        return [
-            Event(id="event-poc", title="AI PoC 회의", starts_at=today + timedelta(hours=10), ends_at=today + timedelta(hours=11)),
-            Event(id="event-server", title="서버 점검", starts_at=today + timedelta(hours=13, minutes=30), ends_at=today + timedelta(hours=14, minutes=30)),
-            Event(id="event-rag", title="RAG 결과 확인", starts_at=today + timedelta(hours=16), ends_at=today + timedelta(hours=16, minutes=30)),
-        ]
+        return self.provider.today_events()
 
     def execute(self, **kwargs: object) -> list[Event]:
         return self.today_events()
 
     def tomorrow_events(self) -> list[Event]:
-        return [event.model_copy(update={"id": f"tomorrow-{event.id}", "starts_at": event.starts_at + timedelta(days=1), "ends_at": event.ends_at + timedelta(days=1) if event.ends_at else None}) for event in self.today_events()]
+        return self.provider.tomorrow_events()
 
     def search_events(self, query: str) -> list[Event]:
-        needle = query.lower().strip()
-        return [event for event in self.today_events() + self.tomorrow_events() if not needle or needle in event.title.lower()]
+        return self.provider.search_events(query)
+
+    def create_event(self, draft: CalendarEventDraft) -> Event:
+        return self.provider.create_event(draft)
+
+    def update_event(self, event_id: str, draft: CalendarEventDraft) -> Event:
+        return self.provider.update_event(event_id, draft)
+
+    def delete_event(self, event_id: str) -> None:
+        self.provider.delete_event(event_id)

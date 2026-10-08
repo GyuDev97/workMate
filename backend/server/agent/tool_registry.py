@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from server.models.schemas import ActionCard, Priority, TaskCreate, ToolRisk, ToolTrace
 from server.services.tasks import TaskService
 from server.tools.calendar import CalendarTool
+from server.services.calendar_actions import CalendarActionService
 from server.tools.mail import MailTool
 from server.tools.memory import MemoryTool
 
@@ -42,6 +43,16 @@ class CalendarProposalArgs(BaseModel):
     time: str = "14:00"
 
 
+class CalendarUpdateArgs(CalendarProposalArgs):
+    event_id: str
+
+
+class CalendarDeleteArgs(BaseModel):
+    event_id: str
+    title: str
+    starts_at: datetime
+
+
 @dataclass(frozen=True)
 class RegisteredTool:
     name: str
@@ -62,8 +73,9 @@ class RegisteredTool:
 class ToolRegistry:
     """Single source of truth for tool descriptions, validation, risk and execution."""
 
-    def __init__(self, tasks: TaskService, calendar: CalendarTool, mail: MailTool, memory: MemoryTool) -> None:
+    def __init__(self, tasks: TaskService, calendar: CalendarTool, mail: MailTool, memory: MemoryTool, calendar_actions: CalendarActionService) -> None:
         self.tasks, self.calendar, self.mail, self.memory = tasks, calendar, mail, memory
+        self.calendar_actions = calendar_actions
         self._tools = {tool.name: tool for tool in self._build_tools()}
 
     def _build_tools(self) -> list[RegisteredTool]:
@@ -80,6 +92,8 @@ class ToolRegistry:
             RegisteredTool("get_mail", "Get a single mail summary by ID or query.", ToolRisk.READ, SearchArgs, lambda args: self.mail.get_mail(args.query)),
             RegisteredTool("create_mail_draft", "Prepare a mail draft only. Never sends mail; user approval is required to send.", ToolRisk.PROPOSED_EXTERNAL_WRITE, DraftArgs, self._mail_draft),
             RegisteredTool("propose_calendar_event", "Propose a calendar event only. Never creates an external event without approval.", ToolRisk.PROPOSED_EXTERNAL_WRITE, CalendarProposalArgs, self._calendar_proposal),
+            RegisteredTool("propose_calendar_update", "Propose an update to one confirmed calendar event. Never updates without approval.", ToolRisk.PROPOSED_EXTERNAL_WRITE, CalendarUpdateArgs, self._calendar_update),
+            RegisteredTool("propose_calendar_delete", "Propose deletion of one confirmed calendar event. Never deletes without approval.", ToolRisk.PROPOSED_EXTERNAL_WRITE, CalendarDeleteArgs, self._calendar_delete),
             RegisteredTool("search_work_memory", "Search WorkMemory. This provider may be unavailable in V0.2.", ToolRisk.READ, SearchArgs, lambda args: self.memory.search(args.query)),
         ]
 
@@ -113,6 +127,11 @@ class ToolRegistry:
     def _mail_draft(args: DraftArgs) -> ActionCard:
         return ActionCard(kind="mail_draft", title="답장 초안", fields={"To": args.recipient, "Subject": args.subject, "Body": args.body})
 
-    @staticmethod
-    def _calendar_proposal(args: CalendarProposalArgs) -> ActionCard:
-        return ActionCard(kind="calendar_event", title="일정 등록 제안", fields={"Title": args.title, "When": f"{args.day} {args.time}", "Calendar": "Google Calendar (Mock)"})
+    def _calendar_proposal(self, args: CalendarProposalArgs) -> ActionCard:
+        return self.calendar_actions.propose_create(args.title, args.day, args.time)
+
+    def _calendar_update(self, args: CalendarUpdateArgs) -> ActionCard:
+        return self.calendar_actions.propose_update(args.event_id, args.title, args.day, args.time)
+
+    def _calendar_delete(self, args: CalendarDeleteArgs) -> ActionCard:
+        return self.calendar_actions.propose_delete(args.event_id, args.title, args.starts_at)

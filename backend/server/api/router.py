@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
-from server.api.dependencies import agent, dashboard_service, task_service
-from server.models.schemas import ChatRequest, ChatResponse, Dashboard, Task, TaskCreate
+from server.api.dependencies import agent, calendar_action_service, calendar_provider, dashboard_service, task_service
+from server.models.schemas import ActionExecutionResult, CalendarConnectionStatus, ChatRequest, ChatResponse, Dashboard, Task, TaskCreate
 
 router = APIRouter(prefix="/api/v1")
 
@@ -32,3 +32,37 @@ def complete_task(task_id: str) -> Task:
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest) -> ChatResponse:
     return agent().respond(payload.message, payload.conversation_id)
+
+
+@router.get("/calendar/status", response_model=CalendarConnectionStatus)
+def calendar_status() -> CalendarConnectionStatus:
+    return calendar_provider().status()
+
+
+@router.post("/calendar/connect", response_model=CalendarConnectionStatus)
+def calendar_connect() -> CalendarConnectionStatus:
+    try:
+        return calendar_provider().connect()
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/calendar/verify", response_model=CalendarConnectionStatus)
+def calendar_verify() -> CalendarConnectionStatus:
+    try:
+        return calendar_provider().verify()
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/calendar/disconnect", response_model=CalendarConnectionStatus)
+def calendar_disconnect() -> CalendarConnectionStatus:
+    return calendar_provider().disconnect()
+
+
+@router.post("/actions/{action_id}/approve", response_model=ActionExecutionResult)
+def approve_action(action_id: str) -> ActionExecutionResult:
+    try:
+        return calendar_action_service().approve(action_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Action not found") from error

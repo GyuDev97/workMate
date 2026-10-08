@@ -3,13 +3,15 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import logging
 from typing import Any
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from server.agent.contracts import ToolCallingProvider
 from server.agent.tool_registry import ToolRegistry
 from server.models.schemas import ActionCard, ChatResponse, ToolTrace
 from server.services.activity import ActivityService
 
-SYSTEM_INSTRUCTIONS = """You are workMate, a Korean personal work assistant. Answer greetings and general questions directly when no tool is needed. Use tools for facts about mail, calendar, tasks, and WorkMemory. Ground structured claims only in tool outputs. If the user asks for real-time or external data and no matching tool exists (for example, weather), clearly say it is not connected; never invent it. Never claim a tool succeeded if it failed. Never send mail or change an external calendar: produce approval-required proposals instead. Keep the final answer concise and helpful in Korean."""
+SYSTEM_INSTRUCTIONS = """You are workMate, a Korean personal work assistant. Answer greetings and general questions directly when no tool is needed. Use tools for facts about mail, calendar, tasks, and WorkMemory. Ground structured claims only in tool outputs. If the user asks for real-time or external data and no matching tool exists (for example, weather), clearly say it is not connected; never invent it. Never claim a tool succeeded if it failed. Never send mail or change an external calendar: produce approval-required proposals instead. To create an event, require a clear date and time; if either is ambiguous, ask a concise follow-up. For update or delete, search first and do not choose among multiple matching events yourself. Keep the final answer concise and helpful in Korean."""
 logger = logging.getLogger("workmate.agent")
 
 
@@ -32,7 +34,9 @@ class WorkMateAgent:
         logger.info("agent_request provider=%s conversation=%s chars=%d history=%d", self.provider.mode, conversation_id, len(message), len(history))
         for _round in range(self.max_tool_rounds):
             try:
-                turn = self.provider.respond(instructions=SYSTEM_INSTRUCTIONS, input_items=items, tools=self.tools.schemas())
+                now = datetime.now(ZoneInfo("Asia/Seoul"))
+                context = f"\n\nCurrent datetime: {now:%Y-%m-%d %H:%M}\nTimezone: Asia/Seoul"
+                turn = self.provider.respond(instructions=SYSTEM_INSTRUCTIONS + context, input_items=items, tools=self.tools.schemas())
             except Exception as error:
                 logger.warning("agent_provider_error provider=%s type=%s", self.provider.mode, type(error).__name__)
                 final_text = "LLM 연결 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
