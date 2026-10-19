@@ -2,6 +2,29 @@
 
 workMate는 메일·일정·개인 업무·향후 WorkMemory를 종합하여 먼저 업무를 챙기는 데스크톱 개인 AI 비서의 실행 가능한 기반입니다. V0.1은 외부 계정 없이도 Electron, React UI, FastAPI Agent, SQLite Task DB를 함께 실행할 수 있도록 Mock Provider를 기본값으로 제공합니다.
 
+## 지식베이스 — WorkMemory 1단계 통합
+
+WorkMate에는 로컬 폴더와 macOS에 마운트된 SMB 폴더의 문서를 수집하는 지식베이스가 포함되어 있습니다. 원본 파일이나 기존 WorkMemory/MariaDB 데이터는 변경하지 않습니다.
+
+- 등록 → 백그라운드 수집·파싱 → 문서 목록 → 추출 원문 열람
+- 지원 형식: TXT, Markdown, CSV, 코드, JSON/YAML/SQL, PDF, DOCX, XLSX
+- 안전 정책: `.env`, 인증서·개인키, `node_modules`, 가상환경 폴더 제외; 파일 최대 25 MiB, PDF 최대 500쪽, XLSX 최대 100,000셀
+- 변경 파일만 SHA-256으로 다시 처리하며, 삭제된 파일은 지식베이스에서 숨김 처리
+- 실행 중 처리 수·전체 수·퍼센트를 표시하며, 파일 사이에서 안전하게 수집을 중단할 수 있음
+
+SMB는 `smb://` 주소가 아닌 운영체제에 마운트된 폴더 경로를 등록합니다. macOS에서는 보통 `/Volumes/공유이름/...` 형식입니다.
+
+### 빠른 실행
+
+프로젝트 루트의 자동 실행 스크립트를 사용하면 백엔드와 Electron 앱이 함께 실행됩니다.
+
+```bash
+./start-workmate.sh       # macOS
+start-workmate.bat        # Windows
+```
+
+기본적으로 macOS 스크립트는 공유 Python 환경을 사용합니다. 다른 가상환경을 쓰려면 `WORKMATE_PYTHON_ENV` 환경 변수로 경로를 지정할 수 있습니다.
+
 ## 현재 구현 상태
 
 - Electron 데스크톱 셸 (macOS / Windows)과 React + TypeScript 업무 대시보드
