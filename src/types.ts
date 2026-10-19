@@ -16,3 +16,7 @@ export interface CalendarConnectionStatus { provider: 'mock' | 'google'; state: 
 export interface ActionExecutionResult { action: ActionCard; message: string }
 export interface ToolTrace { tool: string; risk: 'READ' | 'WRITE_LOCAL' | 'PROPOSED_EXTERNAL_WRITE'; success: boolean; duration_ms: number }
 export interface ChatResponse { message: string; sources: string[]; action?: ActionCard; trace: ToolTrace[] }
+export interface KnowledgeSource { id: string; name: string; local_path: string; created_at: string; last_synced_at?: string; artifact_count: number }
+export interface KnowledgeArtifact { id: string; source_id: string; title: string; relative_path: string; size_bytes: number; modified_at: string; chunk_count: number; parsed: boolean }
+export interface KnowledgeArtifactDetail extends KnowledgeArtifact { content: string }
+export interface SyncRun { id: string; source_id: string; status: string; total: number; scanned: number; created: number; updated: number; unchanged: number; deleted: number; parsed: number; failed: number; chunks_created: number; error?: string; started_at: string; finished_at?: string }

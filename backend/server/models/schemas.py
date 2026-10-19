@@ -155,3 +155,50 @@ class ChatResponse(BaseModel):
     action: ActionCard | None = None
     trace: list[ToolTrace] = []
     metadata: dict[str, Any] = {}
+
+
+class KnowledgeSourceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    local_path: str = Field(min_length=1, max_length=2048)
+
+
+class KnowledgeSource(BaseModel):
+    id: str
+    name: str
+    local_path: str
+    created_at: str
+    last_synced_at: str | None = None
+    artifact_count: int = 0
+
+
+class KnowledgeArtifact(BaseModel):
+    id: str
+    source_id: str
+    title: str
+    relative_path: str
+    size_bytes: int
+    modified_at: str
+    chunk_count: int = 0
+    parsed: bool = False
+
+
+class KnowledgeArtifactDetail(KnowledgeArtifact):
+    content: str = ""
+
+
+class SyncRun(BaseModel):
+    id: str
+    source_id: str
+    status: str
+    total: int = 0
+    scanned: int = 0
+    created: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    deleted: int = 0
+    parsed: int = 0
+    failed: int = 0
+    chunks_created: int = 0
+    error: str | None = None
+    started_at: str
+    finished_at: str | None = None

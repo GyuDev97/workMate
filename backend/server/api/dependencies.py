@@ -15,11 +15,17 @@ from server.providers.llm.openai_provider import OpenAIProvider
 from server.providers.calendar.google import GoogleCalendarProvider
 from server.providers.calendar.mock import MockCalendarProvider
 from server.services.calendar_actions import CalendarActionService
+from server.services.knowledge import KnowledgeService
 
 
 @lru_cache
 def task_service() -> TaskService:
     return TaskService(TaskRepository())
+
+
+@lru_cache
+def knowledge_service() -> KnowledgeService:
+    return KnowledgeService()
 
 
 @lru_cache

@@ -19,6 +19,7 @@ def isolate_task_database(tmp_path, monkeypatch):
     """Keep API tests from writing into the desktop app's local SQLite data."""
     monkeypatch.chdir(tmp_path)
     dependencies.task_service.cache_clear()
+    dependencies.knowledge_service.cache_clear()
     dependencies.dashboard_service.cache_clear()
     dependencies.activity_service.cache_clear()
     dependencies.calendar_action_service.cache_clear()
@@ -29,6 +30,7 @@ def isolate_task_database(tmp_path, monkeypatch):
     dependencies.agent.cache_clear()
     yield
     dependencies.task_service.cache_clear()
+    dependencies.knowledge_service.cache_clear()
     dependencies.dashboard_service.cache_clear()
     dependencies.activity_service.cache_clear()
     dependencies.calendar_action_service.cache_clear()
@@ -110,6 +112,22 @@ def test_task_lifecycle() -> None:
     completed = client.post(f"/api/v1/tasks/{created.json()['id']}/complete")
     assert completed.status_code == 200
     assert completed.json()["status"] == "DONE"
+
+
+def test_local_folder_knowledge_collection_and_document_preview(tmp_path) -> None:
+    folder = tmp_path / "documents"
+    folder.mkdir()
+    (folder / "notes.md").write_text("# 회의 메모\n\n다음 주까지 검토 결과를 공유합니다.", encoding="utf-8")
+    (folder / ".env").write_text("SECRET=never-collect", encoding="utf-8")
+    source = client.post("/api/v1/knowledge/sources", json={"name": "테스트 문서", "local_path": str(folder)})
+    assert source.status_code == 201
+    run = client.post(f"/api/v1/knowledge/sources/{source.json()['id']}/scan")
+    assert run.status_code == 200
+    assert run.json()["scanned"] == 1 and run.json()["parsed"] == 1
+    artifacts = client.get(f"/api/v1/knowledge/sources/{source.json()['id']}/artifacts").json()
+    assert len(artifacts) == 1 and artifacts[0]["chunk_count"] >= 1
+    preview = client.get(f"/api/v1/knowledge/artifacts/{artifacts[0]['id']}")
+    assert preview.status_code == 200 and "검토 결과" in preview.json()["content"]
 
 
 def test_calendar_action_approval_and_duplicate_prevention() -> None:

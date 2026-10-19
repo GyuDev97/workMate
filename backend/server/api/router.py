@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from server.api.dependencies import agent, calendar_action_service, calendar_provider, dashboard_service, task_service
-from server.models.schemas import ActionExecutionResult, CalendarConnectionStatus, ChatRequest, ChatResponse, Dashboard, Task, TaskCreate
+from server.api.dependencies import agent, calendar_action_service, calendar_provider, dashboard_service, knowledge_service, task_service
+from server.models.schemas import ActionExecutionResult, CalendarConnectionStatus, ChatRequest, ChatResponse, Dashboard, KnowledgeArtifact, KnowledgeArtifactDetail, KnowledgeSource, KnowledgeSourceCreate, SyncRun, Task, TaskCreate
 
 router = APIRouter(prefix="/api/v1")
 
@@ -66,3 +66,53 @@ def approve_action(action_id: str) -> ActionExecutionResult:
         return calendar_action_service().approve(action_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Action not found") from error
+
+
+@router.get("/knowledge/sources", response_model=list[KnowledgeSource])
+def list_knowledge_sources() -> list[KnowledgeSource]:
+    return knowledge_service().list_sources()
+
+
+@router.post("/knowledge/sources", response_model=KnowledgeSource, status_code=201)
+def create_knowledge_source(payload: KnowledgeSourceCreate) -> KnowledgeSource:
+    try:
+        return knowledge_service().create_source(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.post("/knowledge/sources/{source_id}/scan", response_model=SyncRun)
+def scan_knowledge_source(source_id: str, background_tasks: BackgroundTasks) -> SyncRun:
+    try:
+        run = knowledge_service().start_scan(source_id)
+        background_tasks.add_task(knowledge_service().scan, source_id, run.id)
+        return run
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get("/knowledge/sync-runs/{run_id}", response_model=SyncRun)
+def knowledge_sync_run(run_id: str) -> SyncRun:
+    try: return knowledge_service().get_run(run_id)
+    except KeyError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/knowledge/sync-runs/{run_id}/cancel", response_model=SyncRun)
+def cancel_knowledge_sync_run(run_id: str) -> SyncRun:
+    try: return knowledge_service().cancel(run_id)
+    except KeyError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.get("/knowledge/sources/{source_id}/artifacts", response_model=list[KnowledgeArtifact])
+def list_knowledge_artifacts(source_id: str) -> list[KnowledgeArtifact]:
+    return knowledge_service().list_artifacts(source_id)
+
+
+@router.get("/knowledge/artifacts/{artifact_id}", response_model=KnowledgeArtifactDetail)
+def knowledge_artifact(artifact_id: str) -> KnowledgeArtifactDetail:
+    try:
+        return knowledge_service().artifact(artifact_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error

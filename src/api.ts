@@ -1,4 +1,4 @@
-import type { ActionExecutionResult, CalendarConnectionStatus, ChatResponse, Dashboard, Task } from './types'
+import type { ActionExecutionResult, CalendarConnectionStatus, ChatResponse, Dashboard, KnowledgeArtifact, KnowledgeArtifactDetail, KnowledgeSource, SyncRun, Task } from './types'
 
 const baseUrl = import.meta.env.VITE_BACKEND_URL ?? 'http://127.0.0.1:8765'
 
@@ -21,5 +21,12 @@ export const api = {
   connectCalendar: () => request<CalendarConnectionStatus>('/api/v1/calendar/connect', { method: 'POST' }),
   verifyCalendar: () => request<CalendarConnectionStatus>('/api/v1/calendar/verify', { method: 'POST' }),
   disconnectCalendar: () => request<CalendarConnectionStatus>('/api/v1/calendar/disconnect', { method: 'POST' }),
-  approveAction: (id: string) => request<ActionExecutionResult>(`/api/v1/actions/${id}/approve`, { method: 'POST' })
+  approveAction: (id: string) => request<ActionExecutionResult>(`/api/v1/actions/${id}/approve`, { method: 'POST' }),
+  knowledgeSources: () => request<KnowledgeSource[]>('/api/v1/knowledge/sources'),
+  createKnowledgeSource: (name: string, local_path: string) => request<KnowledgeSource>('/api/v1/knowledge/sources', { method: 'POST', body: JSON.stringify({ name, local_path }) }),
+  scanKnowledgeSource: (id: string) => request<SyncRun>(`/api/v1/knowledge/sources/${id}/scan`, { method: 'POST' }),
+  knowledgeSyncRun: (id: string) => request<SyncRun>(`/api/v1/knowledge/sync-runs/${id}`),
+  cancelKnowledgeSyncRun: (id: string) => request<SyncRun>(`/api/v1/knowledge/sync-runs/${id}/cancel`, { method: 'POST' }),
+  knowledgeArtifacts: (id: string) => request<KnowledgeArtifact[]>(`/api/v1/knowledge/sources/${id}/artifacts`),
+  knowledgeArtifact: (id: string) => request<KnowledgeArtifactDetail>(`/api/v1/knowledge/artifacts/${id}`)
 }
